@@ -33,6 +33,64 @@ try {
   console.log("Firebase Admin initialization error: ", e);
 }
 
+// Automatically provision or update Admin user credentials
+async function ensureAdminUser() {
+  const adminEmail = "arepallyjashwanth08@gmail.com";
+  const adminPassword = "464612";
+  try {
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByEmail(adminEmail);
+      await admin.auth().updateUser(userRecord.uid, {
+        password: adminPassword,
+        emailVerified: true,
+        displayName: "Admin"
+      });
+      console.log(`✅ Admin user ${adminEmail} updated successfully (UID: ${userRecord.uid})`);
+    } catch (notFound) {
+      userRecord = await admin.auth().createUser({
+        email: adminEmail,
+        password: adminPassword,
+        displayName: "Admin",
+        emailVerified: true
+      });
+      console.log(`✅ Admin user ${adminEmail} created successfully (UID: ${userRecord.uid})`);
+    }
+
+    const db = admin.firestore();
+    // Update users doc
+    await db.collection("users").doc(userRecord.uid).set({
+      userId: userRecord.uid,
+      email: adminEmail,
+      displayName: "Admin",
+      username: "admin",
+      role: "admin",
+      isAdmin: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // Update admins doc
+    await db.collection("admins").doc(userRecord.uid).set({
+      email: adminEmail,
+      role: "admin",
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await db.collection("admins").doc(adminEmail).set({
+      uid: userRecord.uid,
+      email: adminEmail,
+      role: "admin"
+    }, { merge: true });
+
+    console.log(`✅ Admin roles & permissions granted in Firestore for ${adminEmail}`);
+  } catch (err) {
+    console.error("Error provisioning admin user:", err);
+  }
+}
+
+// Call admin provisioning on launch
+ensureAdminUser();
+
 async function startServer() {
   const app = express();
   app.use(cors());
@@ -182,9 +240,8 @@ async function startServer() {
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const decoded = await admin.auth().verifyIdToken(token);
-      // Let's assume if they have a valid token they are authorized for the bypass (since UI enforces it).
-      // Or require their email to be malleshr20944@gmail.com
-      if (decoded.email === 'malleshr20944@gmail.com') {
+      // Allow super admin emails or users in admins collection
+      if (decoded.email === 'arepallyjashwanth08@gmail.com' || decoded.email === 'malleshr20944@gmail.com') {
         next();
       } else {
         const adminDoc = await admin.firestore().collection('admins').doc(decoded.uid).get();

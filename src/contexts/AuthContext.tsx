@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (firebaseUser) {
         // Immediate check for owner email to prevent any delay
-        if (firebaseUser.email === 'malleshr20944@gmail.com') {
+        if (firebaseUser.email === 'arepallyjashwanth08@gmail.com' || firebaseUser.email === 'malleshr20944@gmail.com') {
           setIsAdmin(true);
         }
 
@@ -46,7 +46,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         // Real-time synchronization of current user document
         unsubUserDoc = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
-          let userIsAdmin = firebaseUser.email === 'malleshr20944@gmail.com';
+          let userIsAdmin = firebaseUser.email === 'arepallyjashwanth08@gmail.com' || firebaseUser.email === 'malleshr20944@gmail.com';
           
           if (userDoc.exists()) {
             const data = userDoc.data();

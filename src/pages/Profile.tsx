@@ -48,7 +48,7 @@ export default function Profile() {
     });
   };
 
-  const isReallyAdmin = isAdmin || dbUser?.isAdmin === true || dbUser?.role === 'admin' || dbUser?.role === 'staff' || user?.email === 'malleshr20944@gmail.com';
+  const isReallyAdmin = isAdmin || dbUser?.isAdmin === true || dbUser?.role === 'admin' || dbUser?.role === 'staff' || user?.email === 'arepallyjashwanth08@gmail.com' || user?.email === 'malleshr20944@gmail.com';
 
   const menuItems = [
     ...(isReallyAdmin ? [{ icon: <Shield className="w-[18px] h-[18px] text-[#FF4500]" strokeWidth={2.5} />, label: 'Admin Dashboard', onClick: () => navigate('/admin') }] : []),
