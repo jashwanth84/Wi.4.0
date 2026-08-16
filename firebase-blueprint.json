@@ -1,0 +1,149 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A player or standard user on the platform.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user." },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "freeFireId": { "type": "string" },
+        "walletBalance": { "type": "number", "description": "Current real balance." },
+        "bonusBalance": { "type": "number", "description": "Current bonus balance." },
+        "totalEarnings": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["user"] }
+      },
+      "required": ["userId", "walletBalance", "bonusBalance", "role", "createdAt"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Administrator data.",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["admin", "superadmin"] }
+      },
+      "required": ["adminId", "email", "role"]
+    },
+    "Tournament": {
+      "title": "Tournament",
+      "description": "An esports tournament.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "game": { "type": "string" },
+        "entryFee": { "type": "number" },
+        "prizePool": { "type": "number" },
+        "slotsTotal": { "type": "number" },
+        "slotsFilled": { "type": "number" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["upcoming", "live", "completed", "cancelled"] },
+        "roomId": { "type": "string" },
+        "roomPassword": { "type": "string" },
+        "createdBy": { "type": "string", "description": "Admin who created it." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "game", "entryFee", "slotsTotal", "status", "createdAt"]
+    },
+    "TournamentParticipant": {
+      "title": "Tournament Participant",
+      "description": "A user joined in a tournament.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "gameId": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "kills": { "type": "number" },
+        "placement": { "type": "number" },
+        "points": { "type": "number" }
+      },
+      "required": ["userId", "joinedAt"]
+    },
+    "WalletTransaction": {
+      "title": "Wallet Transaction",
+      "description": "A deposit, withdrawal, or deduction for a tournament.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "tournament_fee", "prize_winning"] },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "amount", "status", "createdAt"]
+    },
+    "Slider": {
+      "title": "Slider",
+      "description": "Dynamic top banners for Home screen.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "gradient": { "type": "string" },
+        "iconType": { "type": "string" },
+        "spriteSeed": { "type": "string" },
+        "link": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "status", "order"]
+    },
+    "DepositRequest": {
+      "title": "Deposit Request",
+      "description": "A request to add coins to wallet via ZapUPI.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "pay_amount": { "type": "number" },
+        "order_id": { "type": "string" },
+        "txn_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "customer_mobile": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "order_id", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Public and private user details."
+    },
+    "admins/{adminId}": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "Admins with dashboard access."
+    },
+    "tournaments/{tournamentId}": {
+      "schema": { "$ref": "#/entities/Tournament" },
+      "description": "Main tournaments data."
+    },
+    "tournaments/{tournamentId}/participants/{participantId}": {
+      "schema": { "$ref": "#/entities/TournamentParticipant" },
+      "description": "Players joined in a specific tournament."
+    },
+    "wallet_transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/WalletTransaction" },
+      "description": "All financial transactions."
+    },
+    "deposit_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/DepositRequest" },
+      "description": "Deposit requests via third-party UPI."
+    },
+    "sliders/{sliderId}": {
+      "schema": { "$ref": "#/entities/Slider" },
+      "description": "Homepage slider banners."
+    },
+    "expenses/{expenseId}": {
+      "description": "Platform expenses tracking.",
+      "schema": "schema missing"
+    }
+  }
+}

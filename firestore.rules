@@ -1,0 +1,161 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isAdmin() { return isSignedIn() && (request.auth.token.email == 'malleshr20944@gmail.com' || exists(/databases/$(database)/documents/admins/$(request.auth.uid))); }
+    
+    // Schema validaton for User
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'walletBalance', 'bonusBalance', 'role', 'createdAt'])
+        && data.userId == request.auth.uid
+        && data.walletBalance is number
+        && data.bonusBalance is number
+        && data.role == 'user'
+        && data.createdAt == request.time;
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn(); // Allow reading metadata for leaderboard/participants
+      allow create: if isSignedIn() 
+        && request.auth.uid == userId
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().walletBalance == 0
+        && incoming().bonusBalance == 0
+        && incoming().totalEarnings == 0;
+      
+      // Update logic: admins can do anything, users can only update simple settings like displayName
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.uid == userId &&
+        (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt', 'username', 'freeFireId', 'photoURL', 'country', 'phone']) 
+        && incoming().updatedAt == request.time)
+      );
+    }
+
+    function isValidTournament(data) {
+      return data.keys().hasAll(['title', 'game', 'entryFee', 'slotsTotal', 'status', 'createdAt'])
+        && data.title is string && data.title.size() <= 100
+        && data.game is string && data.game.size() <= 50
+        && data.entryFee is number
+        && data.slotsTotal is number && data.slotsTotal > 0
+        && data.status in ['upcoming', 'live', 'completed', 'cancelled']
+        && data.createdAt == request.time;
+    }
+
+    match /tournaments/{tournamentId} {
+      // Anyone signed in can view tournaments
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      // Admins can update anything. Users can ONLY increment slots and add themselves to participants.
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        existing().status == 'upcoming' &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['slotsFilled', 'participants']) &&
+        incoming().slotsFilled == (existing().slotsFilled + 1) &&
+        incoming().slotsFilled <= existing().slotsTotal &&
+        (incoming().participants[incoming().participants.size() - 1] == request.auth.uid) &&
+        incoming().participants.size() == (existing().participants.size() + 1)
+      );
+      allow delete: if isAdmin(); // Allow admins to delete directly
+
+      match /participants/{participantId} {
+        allow read: if isSignedIn();
+        // Users join by creating a participant record
+        allow create: if isSignedIn() 
+          && request.auth.uid == participantId
+          && incoming().userId == request.auth.uid
+          && incoming().joinedAt == request.time
+          && incoming().keys().hasAll(['userId', 'joinedAt'])
+          // Verify tournament is upcoming
+          && get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.status == 'upcoming';
+          
+        allow update: if isAdmin() || (
+          isSignedIn() && 
+          request.auth.uid == participantId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['kills', 'placement', 'screenshotUrl', 'updatedAt', 'verified']) &&
+          incoming().verified == false &&
+          (get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.status == 'live' || get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.status == 'ongoing' || get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.status == 'completed') &&
+          incoming().updatedAt == request.time
+        );
+        allow delete: if isAdmin();
+      }
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['userId', 'type', 'amount', 'status', 'createdAt'])
+        && data.userId == request.auth.uid
+        && data.type in ['deposit', 'withdrawal', 'tournament_fee', 'prize_winning']
+        && data.amount is number && data.amount > 0
+        && data.status in ['pending', 'approved', 'rejected', 'completed']
+        && data.createdAt == request.time;
+    }
+
+    match /wallet_transactions/{transactionId} {
+      // Users can only read their own transactions
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Users can create a transaction (e.g. request deposit or withdrawal)
+      allow create: if isSignedIn()
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'pending'
+        && isValidTransaction(incoming());
+      
+      // ONLY admins can approve/reject transactions
+      allow update: if isAdmin();
+    }
+
+    match /deposit_requests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().amount is number && incoming().amount > 0;
+      allow update: if isAdmin();
+    }
+
+    match /games/{gameId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /sliders/{sliderId} {
+      allow read: if isSignedIn() || true; // Public or auth users
+      allow write: if isAdmin();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /app_content/{contentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /app_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

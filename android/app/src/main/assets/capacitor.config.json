@@ -1,0 +1,6 @@
+{
+	"appId": "com.remix.w8",
+	"appName": "Remix-W8",
+	"webDir": "dist",
+	"bundledWebRuntime": false
+}

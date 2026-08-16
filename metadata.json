@@ -1,0 +1,10 @@
+{
+  "name": "Remix-W8",
+  "description": "Esports Tournament Management Platform",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
