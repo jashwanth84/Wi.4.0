@@ -1,22 +1,36 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
 import firebaseConfig from "./firebase-applet-config.json";
 
-// Initialize Firebase Admin SDK
+// Initialize Firebase Admin SDK with Service Account
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
+      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
+      databaseURL: firebaseConfig.databaseURL
     });
+    console.log("Firebase Admin initialized with FIREBASE_SERVICE_ACCOUNT env var.");
+  } else if (fs.existsSync(path.join(process.cwd(), "service-account.json"))) {
+    const serviceAccount = JSON.parse(fs.readFileSync(path.join(process.cwd(), "service-account.json"), "utf8"));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: firebaseConfig.databaseURL
+    });
+    console.log("Firebase Admin initialized with service-account.json file.");
   } else {
     // Use project ID from config
-    admin.initializeApp({ projectId: firebaseConfig.projectId });
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+      databaseURL: firebaseConfig.databaseURL
+    });
+    console.log("Firebase Admin initialized with projectId default credentials.");
   }
 } catch (e) {
-  console.log("Firebase Admin not configured: ", e);
+  console.log("Firebase Admin initialization error: ", e);
 }
 
 async function startServer() {
@@ -237,6 +251,183 @@ async function startServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // Admin Broadcast Web Push FCM Notification to all subscribed devices
+  app.post("/api/admin/send-push", verifyAdmin, async (req, res) => {
+    try {
+      const { title, body, icon } = req.body;
+      if (!title || !body) {
+        return res.status(400).json({ error: "Title and body are required" });
+      }
+
+      // 1. Store notification in Firestore collection
+      const notifRef = await admin.firestore().collection('notifications').add({
+        title,
+        body,
+        readBy: [],
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 2. Fetch all stored FCM tokens across users
+      const usersSnap = await admin.firestore().collection('users').get();
+      const tokens: string[] = [];
+      usersSnap.forEach((doc) => {
+        const u = doc.data();
+        if (Array.isArray(u.fcmTokens)) {
+          tokens.push(...u.fcmTokens);
+        } else if (u.fcmToken && typeof u.fcmToken === 'string') {
+          tokens.push(u.fcmToken);
+        }
+      });
+
+      const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
+
+      let sentCount = 0;
+      if (uniqueTokens.length > 0) {
+        try {
+          const message = {
+            notification: {
+              title,
+              body,
+            },
+            webpush: {
+              notification: {
+                title,
+                body,
+                icon: icon || '/pwa-192x192.png',
+                badge: '/pwa-192x192.png',
+              },
+              fcmOptions: {
+                link: '/'
+              }
+            },
+            tokens: uniqueTokens
+          };
+
+          const response = await admin.messaging().sendEachForMulticast(message);
+          sentCount = response.successCount;
+        } catch (fcmErr) {
+          console.error("FCM Multicast error:", fcmErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        id: notifRef.id,
+        tokensTargeted: uniqueTokens.length,
+        delivered: sentCount
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Targeted Tournament Update & Match Reminder Push Notification API
+  app.post("/api/tournaments/:id/send-push", verifyAdmin, async (req, res) => {
+    try {
+      const tournamentId = req.params.id;
+      const { title, body, type, roomId, roomPassword, matchTime, target } = req.body;
+
+      if (!title || !body) {
+        return res.status(400).json({ error: "Title and body are required" });
+      }
+
+      // Fetch tournament doc to get title and participants
+      const tDoc = await admin.firestore().collection('tournaments').doc(tournamentId).get();
+      const tData = tDoc.exists ? tDoc.data() : null;
+      const tournamentTitle = tData?.title || title;
+
+      // Determine recipient tokens
+      let tokens: string[] = [];
+      const participants = Array.isArray(tData?.participants) ? tData.participants : [];
+
+      if (target === 'participants' && participants.length > 0) {
+        // Fetch tokens only for participants
+        for (const uid of participants) {
+          const uDoc = await admin.firestore().collection('users').doc(uid).get();
+          if (uDoc.exists) {
+            const u = uDoc.data();
+            if (Array.isArray(u?.fcmTokens)) tokens.push(...u.fcmTokens);
+            else if (u?.fcmToken) tokens.push(u.fcmToken);
+          }
+        }
+      } else {
+        // Fetch tokens for all users
+        const usersSnap = await admin.firestore().collection('users').get();
+        usersSnap.forEach((doc) => {
+          const u = doc.data();
+          if (Array.isArray(u.fcmTokens)) tokens.push(...u.fcmTokens);
+          else if (u.fcmToken) tokens.push(u.fcmToken);
+        });
+      }
+
+      const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
+
+      // Save notification log
+      await admin.firestore().collection('notifications').add({
+        title,
+        body,
+        tournamentId,
+        type: type || 'TOURNAMENT_UPDATE',
+        roomId: roomId || null,
+        roomPassword: roomPassword || null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      let sentCount = 0;
+      if (uniqueTokens.length > 0) {
+        try {
+          const message = {
+            notification: {
+              title: type === 'MATCH_REMINDER' 
+                ? `⏰ Match Reminder: ${title}` 
+                : type === 'ROOM_CREDENTIALS' 
+                ? `🔑 Room ID Ready: ${title}`
+                : `🏆 Tournament Update: ${title}`,
+              body,
+            },
+            data: {
+              type: String(type || 'TOURNAMENT_UPDATE'),
+              tournamentId: String(tournamentId),
+              tournamentTitle: String(tournamentTitle),
+              roomId: String(roomId || ''),
+              roomPassword: String(roomPassword || ''),
+              matchTime: String(matchTime || ''),
+              url: `/tournaments/${tournamentId}`
+            },
+            webpush: {
+              notification: {
+                title: type === 'MATCH_REMINDER' 
+                  ? `⏰ Match Reminder: ${title}` 
+                  : `🏆 Tournament: ${title}`,
+                body,
+                icon: '/pwa-192x192.png',
+                badge: '/pwa-192x192.png',
+                tag: `tournament-${tournamentId}`,
+              },
+              fcmOptions: {
+                link: `/tournaments/${tournamentId}`
+              }
+            },
+            tokens: uniqueTokens
+          };
+
+          const response = await admin.messaging().sendEachForMulticast(message);
+          sentCount = response.successCount;
+        } catch (fcmErr) {
+          console.error("Tournament FCM error:", fcmErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        type: type || 'TOURNAMENT_UPDATE',
+        tokensTargeted: uniqueTokens.length,
+        delivered: sentCount
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

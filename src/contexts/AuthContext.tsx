@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { requestNotificationPermissionAndGetToken } from '../lib/pushNotifications';
 
 interface AuthContextType {
   user: User | null;
@@ -34,6 +35,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Immediate check for owner email to prevent any delay
         if (firebaseUser.email === 'malleshr20944@gmail.com') {
           setIsAdmin(true);
+        }
+
+        // Auto-request notification permission and register FCM Web Push Token
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+          requestNotificationPermissionAndGetToken(firebaseUser.uid).catch(console.error);
+        } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          requestNotificationPermissionAndGetToken(firebaseUser.uid).catch(console.error);
         }
 
         // Real-time synchronization of current user document

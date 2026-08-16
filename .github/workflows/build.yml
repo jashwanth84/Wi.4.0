@@ -59,7 +59,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Remix-W8-Debug-APK
+          name: Mr-Clutch-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Create GitHub Release
@@ -67,9 +67,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v1.0.{0}', github.run_number) }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || format('Release v1.0.{0}', github.run_number) }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || format('Mr Clutch 🎯 Release v1.0.{0}', github.run_number) }}
           body: |
-            ## Remix-W8 Esports Tournament APK
+            ## Mr Clutch 🎯 Esports Tournament APK
             - **Build Run**: #${{ github.run_number }}
             - **Commit**: ${{ github.sha }}
             - **Date**: ${{ github.event.head_commit.timestamp || 'Latest' }}

@@ -1,8 +1,8 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.remix.w8',
-  appName: 'Remix-W8',
+  appId: 'com.mrclutch',
+  appName: 'Mr Clutch 🎯',
   webDir: 'dist'
 };
 

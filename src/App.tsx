@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import PushNotificationBanner from './components/PushNotificationBanner';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -82,6 +83,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <PushNotificationBanner />
         <AppRoutes />
         <Toaster position="top-center" toastOptions={{
           style: {

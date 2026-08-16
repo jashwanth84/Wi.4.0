@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.remix.w8"
+    namespace = "com.mrclutch"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.remix.w8"
+        applicationId "com.mrclutch"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -640,13 +640,75 @@ function AdminMatches() {
         roomId: roomModalInfo.roomId,
         roomPassword: roomModalInfo.roomPassword
       });
-      alert('Room updated!');
+
+      // If Room ID is present, optionally trigger push notification
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : null;
+      if (token && roomModalInfo.roomId) {
+        try {
+          await fetch(`/api/tournaments/${roomModalInfo.id}/send-push`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              title: `Room ID & Password Released!`,
+              body: `Room ID: ${roomModalInfo.roomId} | Password: ${roomModalInfo.roomPassword || 'None'}. Join lobby now!`,
+              type: 'ROOM_CREDENTIALS',
+              roomId: roomModalInfo.roomId,
+              roomPassword: roomModalInfo.roomPassword,
+              target: 'participants'
+            })
+          });
+          toast.success('Push notification sent to players with Room ID!');
+        } catch (pushErr) {
+          console.warn('Push notification trigger error:', pushErr);
+        }
+      }
+
+      alert('Room updated successfully!');
       setRoomModalInfo(null);
     } catch (err) {
       console.error(err);
       alert('Failed to update room');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendMatchReminder = async (tournament: any) => {
+    const currentUser = auth.currentUser;
+    const token = currentUser ? await currentUser.getIdToken() : null;
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    try {
+      toast.loading('Broadcasting match reminder push...', { id: 'remind-push' });
+      const res = await fetch(`/api/tournaments/${tournament.id}/send-push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: `Match Starting Soon: ${tournament.title}`,
+          body: `Your match starts in 15 minutes! Please be ready in the game lobby.`,
+          type: 'MATCH_REMINDER',
+          matchTime: tournament.date,
+          target: 'all'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Match reminder push sent to ${data.delivered || data.tokensTargeted} devices!`, { id: 'remind-push' });
+      } else {
+        toast.error('Failed to send reminder push', { id: 'remind-push' });
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Error sending push', { id: 'remind-push' });
     }
   };
 
@@ -803,6 +865,7 @@ function AdminMatches() {
                  <button className="bg-blue-100 text-blue-700 px-3 py-1 rounded text-sm font-medium hover:bg-blue-200" onClick={() => openEditModal(t)}>Edit</button>
                  <button className="bg-purple-100 text-purple-700 px-3 py-1 rounded text-sm font-medium hover:bg-purple-200" onClick={() => setShowPlayersModal(t.id)}>Players ({t.participants?.length || 0})</button>
                  <button className="bg-amber-100 text-amber-700 px-3 py-1 rounded text-sm font-medium hover:bg-amber-200" onClick={() => setRoomModalInfo({id: t.id, roomId: t.roomId || '', roomPassword: t.roomPassword || ''})}>Room ID</button>
+                 <button onClick={() => handleSendMatchReminder(t)} className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded text-sm font-medium hover:bg-emerald-200">⏰ Push Reminder</button>
                  {t.status === 'upcoming' ? (
                    <button onClick={() => updateDoc(doc(db, 'tournaments', t.id), { status: 'live' })} className="bg-green-100 text-green-700 px-3 py-1 rounded text-sm font-medium hover:bg-green-200">Go Live</button>
                  ) : t.status === 'live' || t.status === 'ongoing' ? (
@@ -1430,6 +1493,7 @@ function AdminNotifications() {
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [testPushLoading, setTestPushLoading] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
@@ -1455,26 +1519,69 @@ function AdminNotifications() {
           body,
           updatedAt: serverTimestamp()
         });
-        alert('Notification updated successfully!');
+        toast.success('Notification updated successfully!');
         setEditingId(null);
         setTitle('');
         setBody('');
       } else {
-        await addDoc(collection(db, 'notifications'), {
-          title,
-          body,
-          readBy: [],
-          createdAt: serverTimestamp()
-        });
-        alert('Notification sent to all users!');
+        // Broadcast via backend push service
+        const currentUser = auth.currentUser;
+        const token = currentUser ? await currentUser.getIdToken() : null;
+
+        if (token) {
+          try {
+            await fetch('/api/admin/send-push', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ title, body })
+            });
+          } catch (pushErr) {
+            console.warn('Backend push trigger skipped/failed:', pushErr);
+            // Fallback direct to Firestore
+            await addDoc(collection(db, 'notifications'), {
+              title,
+              body,
+              readBy: [],
+              createdAt: serverTimestamp()
+            });
+          }
+        } else {
+          await addDoc(collection(db, 'notifications'), {
+            title,
+            body,
+            readBy: [],
+            createdAt: serverTimestamp()
+          });
+        }
+        toast.success('Notification broadcasted to all users!');
         setTitle('');
         setBody('');
       }
     } catch (error) {
       console.error(error);
-      alert('Failed to save notification');
+      toast.error('Failed to save notification');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTestWebPush = async () => {
+    setTestPushLoading(true);
+    try {
+      const { requestNotificationPermissionAndGetToken } = await import('../lib/pushNotifications');
+      const token = await requestNotificationPermissionAndGetToken();
+      if (token) {
+        toast.success('Web Push VAPID certificate active! Device registered for push.');
+      } else {
+        toast('Notification permission not granted or unsupported in browser.', { icon: 'ℹ️' });
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Error configuring Web Push');
+    } finally {
+      setTestPushLoading(false);
     }
   };
 
@@ -1510,8 +1617,19 @@ function AdminNotifications() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-5 bg-white rounded-xl shadow p-6 border border-gray-100">
-           <h2 className="text-xl font-bold mb-4">{editingId ? 'Edit Notification' : 'Send Push Notification'}</h2>
+        <div className="lg:col-span-5 bg-white rounded-xl shadow p-6 border border-gray-100 space-y-5">
+           <div>
+             <div className="flex items-center justify-between">
+               <h2 className="text-xl font-bold">{editingId ? 'Edit Notification' : 'Send Push Notification'}</h2>
+               <span className="text-[11px] font-bold bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full border border-purple-100 flex items-center gap-1">
+                 <Bell className="w-3 h-3" /> Web Push Active
+               </span>
+             </div>
+             <p className="text-xs text-gray-500 mt-1">
+               Broadcast alerts & updates to all registered player devices via Firebase Web Push.
+             </p>
+           </div>
+
            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold mb-1">Title</label>
@@ -1532,7 +1650,7 @@ function AdminNotifications() {
                   onChange={(e) => setBody(e.target.value)} 
                   rows={4} 
                   className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
-                  placeholder="Message content..."
+                  placeholder="Message content..." 
                 />
               </div>
               <div className="flex gap-3">
@@ -1546,7 +1664,7 @@ function AdminNotifications() {
                 {editingId && (
                   <button 
                     type="button" 
-                    onClick={handleCancelEdit}
+                    onClick={handleCancelEdit} 
                     className="bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-200 transition"
                   >
                     Cancel
@@ -1554,6 +1672,21 @@ function AdminNotifications() {
                 )}
               </div>
            </form>
+
+           <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+             <div className="text-[11px] text-gray-500 font-mono break-all">
+               <span className="font-bold text-gray-700 block">VAPID Public Key:</span>
+               BEOmTFQXj...FK5g
+             </div>
+             <button
+               type="button"
+               onClick={handleTestWebPush}
+               disabled={testPushLoading}
+               className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold px-3 py-2 rounded-lg transition shrink-0 ml-3"
+             >
+               {testPushLoading ? 'Testing...' : 'Test on this Device'}
+             </button>
+           </div>
         </div>
 
         <div className="lg:col-span-7 bg-white rounded-xl shadow p-6 border border-gray-100">

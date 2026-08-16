@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, collection, query, where, getDocs, runTransaction, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, Copy, Check, X } from 'lucide-react';
+import { ArrowLeft, Copy, Check, X, Bell, BellRing, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
+import { requestNotificationPermissionAndGetToken } from '../lib/pushNotifications';
 
 export default function TournamentDetails() {
   const { id } = useParams<{ id: string }>();
@@ -28,9 +29,42 @@ export default function TournamentDetails() {
   
   const [copiedId, setCopiedId] = useState(false);
   const [copiedPass, setCopiedPass] = useState(false);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderLoading, setReminderLoading] = useState(false);
   
   const { user, dbUser } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        setReminderEnabled(true);
+      }
+    }
+  }, []);
+
+  const handleToggleReminder = async () => {
+    if (!user) {
+      toast.error('Please log in to set push reminders');
+      return;
+    }
+    setReminderLoading(true);
+    try {
+      const token = await requestNotificationPermissionAndGetToken(user.uid);
+      if (token) {
+        setReminderEnabled(true);
+        toast.success('🔔 Push notifications active! You will get 15-min match reminders & Room alerts.', {
+          duration: 4000
+        });
+      } else {
+        toast.error('Push notification permission was not granted.');
+      }
+    } catch (e: any) {
+      toast.error('Failed to enable notifications');
+    } finally {
+      setReminderLoading(false);
+    }
+  };
 
   const currentBalance = (dbUser?.walletBalance || 0) + (dbUser?.bonusBalance || 0);
 
@@ -492,6 +526,40 @@ export default function TournamentDetails() {
               </div>
             </div>
           )}
+
+          {/* Push Notification & Match Reminders Alert Card */}
+          <div className="mb-6 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                {reminderEnabled ? <BellRing className="w-5 h-5 animate-pulse" /> : <Bell className="w-5 h-5" />}
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="font-bold text-xs text-purple-900">
+                    Match Alerts & Push Notifications
+                  </h4>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                </div>
+                <p className="text-[11px] text-purple-700 mt-0.5">
+                  {reminderEnabled
+                    ? 'Active: Receive Room ID alerts & 15-min start reminders'
+                    : 'Get notified automatically when Room ID & Password are ready'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleToggleReminder}
+              disabled={reminderLoading}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${
+                reminderEnabled
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'
+              }`}
+            >
+              {reminderLoading ? 'Enabling...' : reminderEnabled ? '✓ Enabled' : 'Enable Alerts'}
+            </button>
+          </div>
 
           <h2 className="text-blue-600 font-bold text-[17px] mb-4 leading-tight uppercase tracking-wide">
             {tournament.title}
