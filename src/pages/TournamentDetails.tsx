@@ -39,7 +39,11 @@ export default function TournamentDetails() {
 
     const unsubDoc = onSnapshot(doc(db, 'tournaments', id), (snapshot) => {
       if (snapshot.exists()) {
-        setTournament({ id: snapshot.id, ...snapshot.data() });
+        const tData = { id: snapshot.id, ...snapshot.data() } as any;
+        setTournament(tData);
+        if (user && Array.isArray(tData.participants) && tData.participants.includes(user.uid)) {
+          setIsJoined(true);
+        }
       } else {
         setTournament(null);
       }
@@ -47,22 +51,32 @@ export default function TournamentDetails() {
     });
 
     return () => unsubDoc();
-  }, [id]);
+  }, [id, user]);
+
+  useEffect(() => {
+    if (dbUser && !inGameName) {
+      setInGameName(dbUser.freeFireId || dbUser.inGameName || dbUser.username || dbUser.displayName || '');
+    }
+  }, [dbUser, inGameName]);
 
   useEffect(() => {
     if (!id || !user) return;
 
-    const checkJoined = async () => {
-      const q = query(collection(db, `tournaments/${id}/participants`), where('userId', '==', user.uid));
-      const querySnapshot = await getDocs(q);
-      setIsJoined(!querySnapshot.empty);
-      if (!querySnapshot.empty) {
-        setParticipantData(querySnapshot.docs[0].data());
+    // Listen to participant doc in real-time
+    const pRef = doc(db, 'tournaments', id, 'participants', user.uid);
+    const unsubParticipant = onSnapshot(pRef, (snap) => {
+      if (snap.exists()) {
+        setIsJoined(true);
+        setParticipantData(snap.data());
+      } else if (tournament?.participants && Array.isArray(tournament.participants) && tournament.participants.includes(user.uid)) {
+        setIsJoined(true);
       }
-    };
+    }, (err) => {
+      console.error('Participant snapshot error:', err);
+    });
 
-    checkJoined();
-  }, [id, user]);
+    return () => unsubParticipant();
+  }, [id, user, tournament?.participants]);
 
   const handleCopy = (text: string, isId: boolean) => {
     navigator.clipboard.writeText(text);
@@ -76,15 +90,19 @@ export default function TournamentDetails() {
   };
 
   const handleJoinConfirm = async () => {
-    if (!tournament || !user || !dbUser) return;
+    if (!tournament || !user) return;
     
-    if (!inGameName.trim()) {
+    const resolvedInGameName = inGameName.trim() || dbUser?.freeFireId || dbUser?.inGameName || dbUser?.username || dbUser?.displayName;
+    if (!resolvedInGameName) {
       toast.error('Please enter your In Game Name');
       setShowNamePopup(true);
       return;
     }
 
-    if (currentBalance < tournament.entryFee) {
+    const fee = Number(tournament.entryFee) || 0;
+    const availableBalance = (dbUser?.walletBalance || 0) + (dbUser?.bonusBalance || 0);
+
+    if (fee > 0 && availableBalance < fee) {
       toast.error('Insufficient balance! Please recharge your wallet.');
       return;
     }
@@ -95,80 +113,93 @@ export default function TournamentDetails() {
       await runTransaction(db, async (transaction) => {
         const tRef = doc(db, 'tournaments', tournament.id);
         const uRef = doc(db, 'users', user.uid);
-        const pRef = doc(db, `tournaments/${tournament.id}/participants`, user.uid);
+        const pRef = doc(db, 'tournaments', tournament.id, 'participants', user.uid);
         
-        const [tDoc, uDoc, pDoc] = await Promise.all([
+        const [tDoc, uDoc] = await Promise.all([
           transaction.get(tRef),
-          transaction.get(uRef),
-          transaction.get(pRef)
+          transaction.get(uRef)
         ]);
 
-        if (!tDoc.exists() || !uDoc.exists()) throw new Error("Document missing");
-        if (pDoc.exists()) throw new Error("Already joined");
-        if ((tDoc.data().slotsFilled || 0) >= tDoc.data().slotsTotal) throw new Error("Tournament is full");
+        if (!tDoc.exists()) throw new Error("Tournament not found");
         
-        const totalBalance = uDoc.data().totalBalance || uDoc.data().walletBalance || 0;
-        const depositBalance = uDoc.data().depositBalance || 0;
-        const winningBalance = uDoc.data().winningBalance || 0;
-        
-        if (totalBalance < tournament.entryFee) throw new Error("Insufficient balance");
-        
-        let newTotal = totalBalance;
-        let newDeposit = depositBalance;
-        let newWinning = winningBalance;
-        let remainingFee = tournament.entryFee;
-        
-        if (newDeposit >= remainingFee) {
-          newDeposit -= remainingFee;
-          remainingFee = 0;
-        } else {
-          remainingFee -= newDeposit;
-          newDeposit = 0;
-          if (newWinning >= remainingFee) {
-             newWinning -= remainingFee;
-             remainingFee = 0;
-          }
+        const tData = tDoc.data();
+        const currentParticipants = Array.isArray(tData.participants) ? tData.participants : [];
+        if (currentParticipants.includes(user.uid)) {
+          throw new Error("You have already joined this match!");
         }
-        
-        newTotal -= tournament.entryFee;
 
-        transaction.set(pRef, {
-          userId: user.uid,
-          joinedAt: serverTimestamp(),
-          gameId: inGameName.trim(),
-          kills: 0,
-          placement: 0,
-          points: 0
-        });
+        const currentSlotsFilled = Number(tData.slotsFilled) || 0;
+        const totalSlots = Number(tData.slotsTotal) || 100;
+        if (currentSlotsFilled >= totalSlots) {
+          throw new Error("Tournament is full!");
+        }
 
-        transaction.update(uRef, {
-          totalBalance: newTotal,
-          depositBalance: newDeposit,
-          winningBalance: newWinning,
-          walletBalance: newTotal, // legacy fallback
-          updatedAt: serverTimestamp()
-        });
+        if (fee > 0 && uDoc.exists()) {
+          const uData = uDoc.data();
+          const totalBal = (uData.totalBalance !== undefined ? uData.totalBalance : uData.walletBalance) || 0;
+          const bonusBal = uData.bonusBalance || 0;
+          if (totalBal + bonusBal < fee) throw new Error("Insufficient balance");
+          
+          let newDeposit = uData.depositBalance || 0;
+          let newWinning = uData.winningBalance || 0;
+          let newWallet = uData.walletBalance || 0;
+          let remainingFee = fee;
+          
+          if (newDeposit >= remainingFee) {
+            newDeposit -= remainingFee;
+            remainingFee = 0;
+          } else {
+            remainingFee -= newDeposit;
+            newDeposit = 0;
+            if (newWinning >= remainingFee) {
+               newWinning -= remainingFee;
+               remainingFee = 0;
+            }
+          }
+          
+          const newTotal = Math.max(0, totalBal - fee);
+          newWallet = Math.max(0, newWallet - fee);
 
-        transaction.update(tRef, {
-          slotsFilled: (tDoc.data().slotsFilled || 0) + 1,
-          participants: arrayUnion(user.uid)
-        });
-        
-        if (tournament.entryFee > 0) {
+          transaction.update(uRef, {
+            totalBalance: newTotal,
+            depositBalance: newDeposit,
+            winningBalance: newWinning,
+            walletBalance: newWallet,
+            updatedAt: serverTimestamp()
+          });
+
           const transRef = doc(collection(db, 'wallet_transactions'));
           transaction.set(transRef, {
             userId: user.uid,
             type: 'tournament_fee',
-            amount: tournament.entryFee,
+            amount: fee,
             status: 'completed',
             createdAt: serverTimestamp(),
-            tournamentId: tournament.id
+            tournamentId: tournament.id,
+            tournamentTitle: tournament.title || 'Tournament'
           });
         }
+
+        transaction.set(pRef, {
+          userId: user.uid,
+          playerName: dbUser?.displayName || dbUser?.username || user.email?.split('@')[0] || 'Player',
+          gameId: resolvedInGameName,
+          joinedAt: serverTimestamp(),
+          kills: 0,
+          placement: 0,
+          points: 0,
+          verified: false
+        });
+
+        transaction.update(tRef, {
+          slotsFilled: currentSlotsFilled + 1,
+          participants: arrayUnion(user.uid)
+        });
       });
 
       setIsJoined(true);
       setShowConfirmPopup(true);
+      toast.success('Successfully joined tournament!');
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Failed to join tournament');
@@ -526,16 +557,14 @@ export default function TournamentDetails() {
         </main>
 
         {/* Fixed Bottom Action Buttons */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-20 pb-safe">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-20 pb-safe shadow-lg">
           <div className="max-w-md mx-auto flex gap-3">
             {isJoined ? (
               <div className="flex-1 flex flex-col gap-2">
-                <button 
-                  disabled 
-                  className="bg-green-600 text-white font-bold tracking-wider py-3.5 rounded-md text-center shadow-sm opacity-90 cursor-not-allowed"
-                >
-                  JOINED
-                </button>
+                <div className="bg-emerald-600 text-white font-bold tracking-wider py-3.5 rounded-lg text-center shadow-sm flex items-center justify-center gap-2">
+                  <Check className="w-5 h-5" />
+                  <span>YOU ARE JOINED</span>
+                </div>
                 {(tournament.status === 'live' || tournament.status === 'ongoing' || tournament.status === 'completed') && (
                   <button 
                     onClick={() => {
@@ -546,39 +575,45 @@ export default function TournamentDetails() {
                       });
                       setShowUploadModal(true);
                     }}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold tracking-wider py-2 rounded-md text-center shadow-sm transition active:scale-[0.98]"
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold tracking-wider py-2.5 rounded-lg text-center shadow-sm transition active:scale-[0.98]"
                   >
                     {participantData?.screenshotUrl ? 'UPDATE RESULT' : 'UPLOAD RESULT'}
                   </button>
                 )}
               </div>
-            ) : (tournament.slotsFilled || 0) >= tournament.slotsTotal ? (
+            ) : (tournament.slotsFilled || 0) >= (tournament.slotsTotal || 100) ? (
               <button 
                 disabled 
-                className="flex-1 bg-gray-400 text-white font-bold tracking-wider py-3.5 rounded-md text-center shadow-sm cursor-not-allowed"
+                className="flex-1 bg-gray-400 text-white font-bold tracking-wider py-3.5 rounded-lg text-center shadow-sm cursor-not-allowed uppercase"
               >
-                FULL
+                SLOTS FULL
               </button>
-            ) : tournament.status !== 'open' && tournament.status !== 'upcoming' ? (
+            ) : (tournament.status === 'completed' || tournament.status === 'cancelled') ? (
               <button 
                 disabled 
-                className="flex-1 bg-gray-400 text-white font-bold tracking-wider py-3.5 rounded-md text-center shadow-sm cursor-not-allowed uppercase"
+                className="flex-1 bg-gray-400 text-white font-bold tracking-wider py-3.5 rounded-lg text-center shadow-sm cursor-not-allowed uppercase"
               >
-                {tournament.status}
+                MATCH {tournament.status}
               </button>
             ) : (
               <button 
                 onClick={() => setJoinStep(true)}
-                className="flex-1 bg-[#5c00ff] text-white font-bold tracking-wider py-3.5 rounded-md text-center shadow hover:bg-[#6c10ff] transition active:scale-[0.98]"
+                className="flex-1 bg-[#5c00ff] text-white font-bold tracking-wider py-3.5 rounded-lg text-center shadow hover:bg-[#6c10ff] transition active:scale-[0.98] flex items-center justify-center gap-2"
               >
-                JOIN MATCH
+                <span>JOIN MATCH</span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-bold">
+                  {tournament.entryFee > 0 ? `${tournament.entryFee} Coins` : 'FREE'}
+                </span>
               </button>
             )}
             <button 
-              onClick={() => toast.success('Players list feature coming soon!')}
-              className="flex-[0.7] bg-[#2c2f3a] text-white font-bold tracking-wider py-3.5 rounded-md text-center shadow hover:bg-[#3a3d4a] transition active:scale-[0.98]"
+              onClick={() => {
+                const filled = tournament.slotsFilled || (tournament.participants?.length || 0);
+                toast(`Current Players Registered: ${filled} / ${tournament.slotsTotal || 100}`, { icon: '👥' });
+              }}
+              className="flex-[0.7] bg-[#2c2f3a] text-white font-bold tracking-wider py-3.5 rounded-lg text-center shadow hover:bg-[#3a3d4a] transition active:scale-[0.98]"
             >
-              PLAYERS
+              PLAYERS ({tournament.slotsFilled || (tournament.participants?.length || 0)})
             </button>
           </div>
         </div>

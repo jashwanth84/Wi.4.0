@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   Megaphone,
@@ -17,7 +17,9 @@ import {
   Gamepad2,
   PlayCircle,
   Crosshair,
-  Youtube
+  Youtube,
+  Users,
+  Flame
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { toast } from 'react-hot-toast';
@@ -26,6 +28,7 @@ export default function Home() {
   const navigate = useNavigate();
   const [games, setGames] = useState<any[]>([]);
   const [slides, setSlides] = useState<any[]>([]);
+  const [featuredTournaments, setFeaturedTournaments] = useState<any[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [activeGameMode, setActiveGameMode] = useState<string>('all');
@@ -60,6 +63,17 @@ export default function Home() {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'games'), (snap) => {
       setGames(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, err => console.error(err));
+    return () => unsub();
+  }, []);
+
+  // Fetch featured tournaments
+  useEffect(() => {
+    const q = query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'), limit(4));
+    const unsub = onSnapshot(q, (snap) => {
+      const allTournaments = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const openTournaments = allTournaments.filter((t: any) => t.status === 'upcoming' || t.status === 'open' || !t.status || t.status === 'active');
+      setFeaturedTournaments(openTournaments);
     }, err => console.error(err));
     return () => unsub();
   }, []);
@@ -374,6 +388,96 @@ export default function Home() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* 3.5. QUICK JOIN TOURNAMENTS SECTION */}
+      <div className="flex flex-col gap-2 mt-1">
+        <div className="flex items-center justify-between px-0.5">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-white font-display font-black text-sm tracking-wide uppercase flex items-center gap-1">
+              <span>JOIN TOURNAMENTS</span>
+              <Flame className="w-4 h-4 text-orange-500 fill-orange-500 animate-pulse" />
+            </h2>
+          </div>
+          <Link 
+            to="/tournaments" 
+            className="text-[11px] font-black text-[#EF4444] hover:text-red-400 uppercase tracking-wider flex items-center gap-0.5"
+          >
+            <span>VIEW ALL</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+        <p className="text-zinc-500 text-[11px] font-medium leading-none mb-1 px-0.5">Select a match to join and compete</p>
+
+        {featuredTournaments.length > 0 ? (
+          <div className="flex flex-col gap-2.5">
+            {featuredTournaments.slice(0, 2).map((t) => (
+              <div 
+                key={t.id} 
+                className="bg-gradient-to-r from-[#170D30] to-[#120824] rounded-2xl p-3 border border-white/10 flex items-center justify-between shadow-lg hover:border-violet-500/40 transition-all"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
+                  <div className="w-12 h-12 rounded-xl bg-[#200F43] border border-violet-500/30 flex items-center justify-center text-xl shrink-0 overflow-hidden">
+                    <img 
+                      src={t.imageUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${t.id}&flip=true`} 
+                      alt="Match" 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded uppercase">
+                        {t.type || 'SOLO'}
+                      </span>
+                      <span className="text-zinc-400 text-[10px] truncate">
+                        {t.game || 'Free Fire'}
+                      </span>
+                    </div>
+                    <h3 className="text-white font-bold text-[13px] truncate mt-0.5">
+                      {t.title || 'Esports Custom Tournament'}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-1 text-[11px] text-zinc-400">
+                      <span className="text-yellow-400 font-bold">
+                        🏆 {t.prizePool || '₹500'}
+                      </span>
+                      <span>•</span>
+                      <span className="text-zinc-300">
+                        Fee: {t.entryFee > 0 ? `${t.entryFee} C` : 'FREE'}
+                      </span>
+                      <span>•</span>
+                      <span className="text-zinc-400 flex items-center gap-0.5">
+                        <Users className="w-3 h-3 text-zinc-500" />
+                        {t.slotsFilled || 0}/{t.slotsTotal || 100}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <Link
+                  to={`/tournaments/${t.id}`}
+                  className="bg-gradient-to-r from-[#EF4444] to-[#DC2626] hover:from-red-500 hover:to-red-700 text-white font-black text-[12px] px-4 py-2.5 rounded-xl uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] shrink-0 active:scale-95 transition-all"
+                >
+                  JOIN
+                </Link>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Link 
+            to="/tournaments" 
+            className="bg-[#170D30] rounded-2xl p-4 border border-dashed border-white/10 flex items-center justify-between text-zinc-400 hover:text-white transition group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center font-black">
+                ⚔️
+              </div>
+              <div className="flex flex-col">
+                <span className="text-white font-bold text-xs">Browse All Match Lobbies</span>
+                <span className="text-zinc-500 text-[10px]">Find open custom rooms and register</span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+          </Link>
+        )}
       </div>
 
       {/* 4. MY CONTESTS SECTION */}

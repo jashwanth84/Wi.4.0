@@ -13,7 +13,7 @@ export default function Tournaments() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const selectedGame = searchParams.get('game');
-  const { dbUser } = useAuth();
+  const { user, dbUser } = useAuth();
   
   const currentBalance = (dbUser?.walletBalance || 0) + (dbUser?.bonusBalance || 0);
 
@@ -39,7 +39,7 @@ export default function Tournaments() {
     if (selectedGame && t.game !== selectedGame) return false;
     if (activeTab === 'ongoing') return t.status === 'live' || t.status === 'ongoing';
     if (activeTab === 'completed') return t.status === 'completed' || t.status === 'cancelled';
-    return t.status === 'upcoming';
+    return t.status === 'upcoming' || t.status === 'open' || !t.status || t.status === 'active';
   });
 
   return (
@@ -192,13 +192,19 @@ export default function Tournaments() {
                     </div>
                     <Link 
                       to={`/tournaments/${tournament.id}`} 
-                      className={`font-black tracking-wider px-6 py-3.5 rounded-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] border border-white/10 transition uppercase text-[13px] flex items-center justify-center text-white ${
-                        (tournament.slotsFilled || 0) >= tournament.slotsTotal 
-                          ? 'bg-gray-800 text-gray-500 cursor-not-allowed border-gray-700 shadow-none' 
-                          : 'bg-gradient-to-r from-[#FF4A4A] to-[#DC2626] hover:from-[#ef4444] hover:to-[#b91c1c] shadow-[0_0_20px_rgba(220,38,38,0.4)]'
+                      className={`font-black tracking-wider px-5 py-3 rounded-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] border transition uppercase text-[12.5px] flex items-center justify-center gap-1 text-white ${
+                        user && tournament.participants?.includes(user.uid)
+                          ? 'bg-emerald-600 border-emerald-500/50 hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+                          : (tournament.slotsFilled || 0) >= (tournament.slotsTotal || 100)
+                            ? 'bg-gray-800 text-gray-500 cursor-not-allowed border-gray-700 shadow-none' 
+                            : 'bg-gradient-to-r from-[#FF4A4A] to-[#DC2626] hover:from-[#ef4444] hover:to-[#b91c1c] border-white/10 shadow-[0_0_20px_rgba(220,38,38,0.4)]'
                       }`}
                     >
-                      {(tournament.slotsFilled || 0) >= tournament.slotsTotal ? 'FULL' : 'JOIN'}
+                      {user && tournament.participants?.includes(user.uid) 
+                        ? '✓ JOINED' 
+                        : (tournament.slotsFilled || 0) >= (tournament.slotsTotal || 100) 
+                          ? 'FULL' 
+                          : 'JOIN'}
                     </Link>
                   </div>
                 )}

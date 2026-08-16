@@ -61,13 +61,13 @@ export default function MyMatches() {
   // Map our app statuses to the tab expected statuses
   const filteredTournaments = tournaments.filter(t => {
     if (activeTab === 'ongoing') return t.status === 'live' || t.status === 'ongoing';
-    if (activeTab === 'completed') return t.status === 'completed';
-    return t.status === 'upcoming';
+    if (activeTab === 'completed') return t.status === 'completed' || t.status === 'cancelled';
+    return t.status === 'upcoming' || t.status === 'open' || !t.status || t.status === 'active';
   });
 
   return (
     <div className="flex flex-col min-h-screen bg-black w-full pb-20 font-sans">
-      <div className="bg-black sticky top-0 z-20 w-full pt-4 pb-4">
+      <div className="bg-black sticky top-0 z-20 w-full pt-4 pb-4 border-b border-white/5">
         <div className="flex items-center justify-between px-4 mb-3">
           <div className="flex items-center">
             <button onClick={() => navigate(-1)} className="p-1 -ml-1 mr-3 text-white hover:bg-white/10 rounded-full">
@@ -90,10 +90,10 @@ export default function MyMatches() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(mappedTab as any)}
-                className={`py-2 px-4 text-[13px] font-semibold uppercase tracking-wider transition-colors ${
+                className={`py-2 px-4 text-[13px] font-semibold uppercase tracking-wider transition-colors border-b-2 ${
                   activeTab === mappedTab 
-                    ? 'text-white' 
-                    : 'text-[#888888]'
+                    ? 'text-[#FF4A4A] border-[#FF4A4A] font-bold' 
+                    : 'text-[#888888] border-transparent'
                 }`}
               >
                 {tab}
@@ -109,15 +109,32 @@ export default function MyMatches() {
                  <div className="w-6 h-6 rounded-full border-2 border-t-white animate-spin" style={{ borderColor: 'rgba(255,255,255,0.2)' }}></div>
              </div>
          ) : filteredTournaments.length === 0 ? (
-             <div className="w-full h-[50vh] flex items-center justify-center">
-                 <h2 className="text-[17px] font-bold text-white tracking-wide">{getEmptyStateText()}</h2>
+             <div className="w-full h-[50vh] flex flex-col items-center justify-center p-6 text-center">
+                 <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4 text-2xl">
+                   🎮
+                 </div>
+                 <h2 className="text-[17px] font-bold text-white tracking-wide mb-2">{getEmptyStateText()}</h2>
+                 <p className="text-zinc-500 text-xs max-w-xs mb-6">
+                   You haven't joined any {activeTab} matches yet. Explore active lobbies and join to start competing!
+                 </p>
+                 <Link 
+                   to="/tournaments"
+                   className="bg-gradient-to-r from-[#FF4A4A] to-[#DC2626] text-white px-6 py-3 rounded-xl font-bold text-sm uppercase tracking-wider shadow-lg hover:brightness-110 transition active:scale-95 flex items-center gap-2"
+                 >
+                   <span>EXPLORE MATCHES</span>
+                   <ChevronRight className="w-4 h-4" />
+                 </Link>
              </div>
          ) : (
             <div className="w-full p-2 space-y-3">
               {filteredTournaments.map((tournament, idx) => (
-                 <div key={tournament.id || idx} className="bg-[#130E2E] rounded flex flex-col overflow-hidden w-full border-b-[3px] border-[#0A071A]">
+                 <div key={tournament.id || idx} className="bg-[#130E2E] rounded-xl flex flex-col overflow-hidden w-full border border-white/5 shadow-md">
                     {/* Event Banner */}
                     <div className="relative aspect-[16/9] w-full bg-cover bg-center overflow-hidden" style={{ backgroundImage: `url('https://api.dicebear.com/7.x/adventurer/svg?seed=${tournament.id || 'arena'}&flip=true')`, backgroundColor: '#3B82F6' }}>
+                      <div className="absolute top-2 right-2 bg-emerald-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>JOINED</span>
+                      </div>
                     </div>
                     
                     {/* Content Section */}
@@ -135,7 +152,7 @@ export default function MyMatches() {
                           <div className="w-12 h-12 rounded-full bg-black border-2 border-white overflow-hidden shrink-0">
                              <img src={`https://api.dicebear.com/7.x/initials/svg?seed=NE&backgroundColor=0e1111`} alt="img" className="w-full h-full object-cover" />
                           </div>
-                          <h3 className="text-[15px] font-bold text-white capitalize leading-snug">FULL MAP {tournament.type || 'SOLO'} PER KILL - Match #{idx + 1}</h3>
+                          <h3 className="text-[15px] font-bold text-white capitalize leading-snug">{tournament.title || `FULL MAP ${tournament.type || 'SOLO'} PER KILL - Match #${idx + 1}`}</h3>
                        </div>
                        
                        {/* Stats Grid */}
@@ -160,30 +177,25 @@ export default function MyMatches() {
                                <div className="w-4 h-4 rounded-full bg-yellow-400 flex items-center justify-center border-[0.5px] border-yellow-500">
                                   <span className="text-[8px] font-black text-white" style={{ WebkitTextStroke: '0.5px #B45309' }}>C</span>
                                </div>
-                               <span className="text-white text-[13px] font-bold">{tournament.perKillReward || 6}</span>
+                               <span className="text-white text-[13px] font-bold">{tournament.perKillReward || 0}</span>
                              </div>
                           </div>
                        </div>
                        
-                       {/* Entry & Join */}
+                       {/* Entry & Details link */}
                        <div className="flex items-center justify-between w-full pt-1.5 h-10">
-                          <div className="flex flex-col w-[60%] justify-center h-full gap-1 pl-1">
+                          <div className="flex flex-col w-[55%] justify-center h-full gap-1 pl-1">
                              <div className="flex items-center justify-between text-white text-[12px] font-bold leading-none">
-                               <span>{tournament.slotsFilled || 1}/{tournament.slotsTotal || 20}</span>
+                                <span>Slots: {tournament.slotsFilled || 1}/{tournament.slotsTotal || 100}</span>
                              </div>
                              <div className="w-full bg-[#521321] h-[5px] rounded-full overflow-hidden shrink-0">
-                                {/* Progress bar */}
-                                <div className="bg-[#1C5EEB] h-full" style={{ width: `${Math.min(100, ((tournament.slotsFilled || 1) / (tournament.slotsTotal || 20)) * 100)}%` }}></div>
+                                <div className="bg-[#1C5EEB] h-full" style={{ width: `${Math.min(100, ((tournament.slotsFilled || 1) / (tournament.slotsTotal || 100)) * 100)}%` }}></div>
                              </div>
                           </div>
                           
-                          {/* Join Button */}
-                          <Link to={`/tournaments/${tournament.id}`} className="bg-gradient-to-r from-[#6251DD] to-[#8C6DF2] text-white rounded-md flex items-center tracking-wide px-3 min-w-[90px] justify-center h-9 font-bold shadow transition-transform active:scale-95 shrink-0 ml-4">
-                             <div className="w-[14px] h-[14px] rounded-full bg-yellow-400 flex items-center justify-center border border-yellow-500 mr-1.5 shrink-0">
-                                <span className="text-[7px] font-black text-white" style={{ WebkitTextStroke: '0.5px #B45309' }}>C</span>
-                             </div>
-                             <span className="text-[13px] font-bold mr-1">{tournament.entryFee}</span>
-                             <span className="text-[12px] uppercase font-bold mr-1">JOIN</span>
+                          {/* View Details Button */}
+                          <Link to={`/tournaments/${tournament.id}`} className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg flex items-center tracking-wide px-3 min-w-[110px] justify-center h-9 font-bold shadow transition-transform active:scale-95 shrink-0 ml-3">
+                             <span className="text-[12px] uppercase font-bold mr-1">VIEW ROOM</span>
                              <ChevronRight className="w-[14px] h-[14px]" strokeWidth={3} />
                           </Link>
                        </div>
