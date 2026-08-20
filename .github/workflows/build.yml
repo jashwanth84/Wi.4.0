@@ -36,7 +36,7 @@ jobs:
       - name: Fix Wrapper & Build APK
         run: |
           cd android
-          gradle wrapper
+          gradle wrapper --gradle-version 8.7
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
