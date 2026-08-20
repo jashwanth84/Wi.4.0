@@ -1,7 +1,7 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch: # Allows manual trigger from your phone
+  workflow_dispatch:
   push:
     branches: [ "main" ]
 
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -29,7 +29,7 @@ jobs:
 
       - name: Build Web App & Sync Capacitor
         run: |
-          npm install
+          npm install --include=optional
           npm run build
           npx cap sync android
 
