@@ -1,82 +1,46 @@
-name: Build & Release APK
+name: Build Android APK
 
 on:
+  workflow_dispatch: # Allows manual trigger from your phone
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 18
 
-      - name: Install Dependencies & Build Web Assets
-        run: |
-          npm ci || npm install
-          npm run build
-
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 21
+          distribution: 'zulu'
+          java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: wrapper
-          cache-read-only: false
-          validate-wrappers: false
-
-      - name: Capacitor Sync
+      - name: Build Web App & Sync Capacitor
         run: |
+          npm install
+          npm run build
           npx cap sync android
 
-      - name: Make Gradle executable
-        run: chmod +x ./android/gradlew
-
       - name: Build Debug APK
-        run: cd android && ./gradlew assembleDebug --stacktrace
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Upload Artifact
+      - name: Upload APK to GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: Mr-Clutch-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
-        with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v1.0.{0}', github.run_number) }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || format('Mr Clutch 🎯 Release v1.0.{0}', github.run_number) }}
-          body: |
-            ## Mr Clutch 🎯 Esports Tournament APK
-            - **Build Run**: #${{ github.run_number }}
-            - **Commit**: ${{ github.sha }}
-            - **Date**: ${{ github.event.head_commit.timestamp || 'Latest' }}
-
-            Download the attached `app-debug.apk` below to install directly on Android.
-          draft: false
-          prerelease: false
-          files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-
+          name: my-app-apk
+          path: android/app/build/outputs/apk/debug/*.apk
